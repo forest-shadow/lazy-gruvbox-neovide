@@ -206,6 +206,41 @@ local function render_font_colors(ctx)
   end
 end
 
+local function setup_font_color_autocmds()
+  local group = vim.api.nvim_create_augroup("markdown_font_color", { clear = true })
+
+  vim.api.nvim_create_autocmd({
+    "BufEnter",
+    "BufWinEnter",
+    "TextChanged",
+    "TextChangedI",
+    "InsertLeave",
+  }, {
+    group = group,
+    callback = function(event)
+      local buf = event.buf
+      if vim.bo[buf].filetype ~= "markdown" then
+        return
+      end
+
+      vim.schedule(function()
+        render_font_colors({ buf = buf })
+      end)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    group = group,
+    callback = function()
+      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
+          render_font_colors({ buf = buf })
+        end
+      end
+    end,
+  })
+end
+
 return {
   {
     "MeanderingProgrammer/render-markdown.nvim",
@@ -215,6 +250,8 @@ return {
       vim.api.nvim_create_autocmd({ "VimEnter", "ColorScheme" }, {
         callback = set_markdown_highlights,
       })
+
+      setup_font_color_autocmds()
     end,
 
     opts = function()
@@ -295,18 +332,9 @@ return {
               scope_highlight = "MdHtmlCode",
             },
 
-            -- <font color="#..."> is handled by the on.render hook below.
+            -- <font color="#..."> is handled by a local autocmd below.
             -- Keeping it out of html.tag avoids conceal shifting the text.
           },
-        },
-
-        on = {
-          render = render_font_colors,
-          clear = function(ctx)
-            if vim.api.nvim_buf_is_valid(ctx.buf) then
-              vim.api.nvim_buf_clear_namespace(ctx.buf, font_color_ns, 0, -1)
-            end
-          end,
         },
 
         quote = {
