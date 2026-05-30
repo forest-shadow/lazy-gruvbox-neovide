@@ -1,6 +1,6 @@
 -- ~/.config/nvim/lua/plugins/render-markdown.lua
 
-local font_color_ns = vim.api.nvim_create_namespace("markdown_font_color")
+local html_inline_ns = vim.api.nvim_create_namespace("markdown_html_inline")
 
 local function set_markdown_highlights()
   local c = {
@@ -28,6 +28,8 @@ local function set_markdown_highlights()
   -- HTML-style tags: <b>, <i>, <u>, <mark>, <kbd>, <code>
   hl("MdHtmlBold", { fg = c.orange, bold = true })
   hl("MdHtmlItalic", { fg = c.purple, italic = true })
+  hl("MdHtmlBoldText", { bold = true })
+  hl("MdHtmlItalicText", { italic = true })
   hl("MdHtmlUnderline", { fg = c.aqua, underline = true })
   hl("MdHtmlMark", { fg = c.bg0, bg = c.yellow, bold = true })
   hl("MdHtmlKbd", { fg = c.fg0, bg = c.bg2, bold = true })
@@ -117,6 +119,15 @@ local function font_color_text_highlight(color)
   return group
 end
 
+local function html_tag_text_highlight(tag)
+  local normalized = tag:lower()
+  if normalized == "b" or normalized == "strong" then
+    return "MdHtmlBoldText"
+  elseif normalized == "i" or normalized == "em" then
+    return "MdHtmlItalicText"
+  end
+end
+
 local function offset_to_position(line_offsets, offset)
   local low = 1
   local high = #line_offsets
@@ -134,13 +145,13 @@ local function offset_to_position(line_offsets, offset)
   return line - 1, offset - line_offsets[line]
 end
 
-local function render_font_colors(ctx)
+local function render_html_inline_styles(ctx)
   local buf = ctx.buf
   if not vim.api.nvim_buf_is_valid(buf) then
     return
   end
 
-  vim.api.nvim_buf_clear_namespace(buf, font_color_ns, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buf, html_inline_ns, 0, -1)
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   if #lines == 0 then
@@ -159,46 +170,70 @@ local function render_font_colors(ctx)
   local search_from = 1
 
   while true do
-    local tag_start, tag_end = text:find("</?[Ff][Oo][Nn][Tt][^>]*>", search_from)
+    local tag_start, tag_end, closing, tag_name =
+      text:find("<(/?)([A-Za-z][A-Za-z0-9]*)[^>]*>", search_from)
     if not tag_start then
       break
     end
 
+    local normalized_tag = tag_name:lower()
     local tag = text:sub(tag_start, tag_end)
-    if tag:find("^</") then
-      local current = table.remove(stack)
+    if closing == "/" then
+      local current_index = nil
+      for index = #stack, 1, -1 do
+        if stack[index].tag == normalized_tag then
+          current_index = index
+          break
+        end
+      end
+
+      local current = current_index and table.remove(stack, current_index)
       if current then
         local start_row, start_col = offset_to_position(line_offsets, current.content_start)
         local end_row, end_col = offset_to_position(line_offsets, tag_start - 1)
 
         if start_row < end_row or start_col < end_col then
-          vim.api.nvim_buf_set_extmark(buf, font_color_ns, start_row, start_col, {
+          vim.api.nvim_buf_set_extmark(buf, html_inline_ns, start_row, start_col, {
             end_row = end_row,
             end_col = end_col,
             hl_group = current.text_highlight,
+            hl_mode = "combine",
             priority = 10000,
           })
         end
       end
     else
-      local attr_start = tag:find([[color%s*=%s*["']?#%x%x%x%x%x%x["']?]])
-      if attr_start then
-        local color_start, color_end = tag:find("#%x%x%x%x%x%x", attr_start)
-        local color = tag:sub(color_start, color_end)
-        local start_row, start_col = offset_to_position(line_offsets, tag_start + color_start - 2)
-        local end_row, end_col = offset_to_position(line_offsets, tag_start + color_end - 1)
+      if normalized_tag == "font" then
+        local attr_start = tag:find([[color%s*=%s*["']?#%x%x%x%x%x%x["']?]])
+        if attr_start then
+          local color_start, color_end = tag:find("#%x%x%x%x%x%x", attr_start)
+          local color = tag:sub(color_start, color_end)
+          local start_row, start_col = offset_to_position(line_offsets, tag_start + color_start - 2)
+          local end_row, end_col = offset_to_position(line_offsets, tag_start + color_end - 1)
 
-        vim.api.nvim_buf_set_extmark(buf, font_color_ns, start_row, start_col, {
-          end_row = end_row,
-          end_col = end_col,
-          hl_group = font_color_value_highlight(color),
-          priority = 10000,
-        })
+          vim.api.nvim_buf_set_extmark(buf, html_inline_ns, start_row, start_col, {
+            end_row = end_row,
+            end_col = end_col,
+            hl_group = font_color_value_highlight(color),
+            hl_mode = "combine",
+            priority = 10000,
+          })
 
-        table.insert(stack, {
-          content_start = tag_end,
-          text_highlight = font_color_text_highlight(color),
-        })
+          table.insert(stack, {
+            tag = normalized_tag,
+            content_start = tag_end,
+            text_highlight = font_color_text_highlight(color),
+          })
+        end
+      else
+        local text_highlight = html_tag_text_highlight(normalized_tag)
+        if text_highlight then
+          table.insert(stack, {
+            tag = normalized_tag,
+            content_start = tag_end,
+            text_highlight = text_highlight,
+          })
+        end
       end
     end
 
@@ -206,8 +241,8 @@ local function render_font_colors(ctx)
   end
 end
 
-local function setup_font_color_autocmds()
-  local group = vim.api.nvim_create_augroup("markdown_font_color", { clear = true })
+local function setup_html_inline_autocmds()
+  local group = vim.api.nvim_create_augroup("markdown_html_inline", { clear = true })
 
   vim.api.nvim_create_autocmd({
     "BufEnter",
@@ -224,7 +259,7 @@ local function setup_font_color_autocmds()
       end
 
       vim.schedule(function()
-        render_font_colors({ buf = buf })
+        render_html_inline_styles({ buf = buf })
       end)
     end,
   })
@@ -234,7 +269,7 @@ local function setup_font_color_autocmds()
     callback = function()
       for _, buf in ipairs(vim.api.nvim_list_bufs()) do
         if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
-          render_font_colors({ buf = buf })
+          render_html_inline_styles({ buf = buf })
         end
       end
     end,
@@ -251,7 +286,7 @@ return {
         callback = set_markdown_highlights,
       })
 
-      setup_font_color_autocmds()
+      setup_html_inline_autocmds()
     end,
 
     opts = function()
@@ -302,19 +337,8 @@ return {
             -- Теги будут скрываться, а содержимое будет стилизоваться.
             -- Я специально не добавляю icon, чтобы не появлялся лишний горизонтальный отступ.
 
-            b = {
-              scope_highlight = "MdHtmlBold",
-            },
-            strong = {
-              scope_highlight = "MdHtmlBold",
-            },
-
-            i = {
-              scope_highlight = "MdHtmlItalic",
-            },
-            em = {
-              scope_highlight = "MdHtmlItalic",
-            },
+            -- <b>, <strong>, <i>, <em>, and <font color="#..."> are handled
+            -- by a local autocmd so the tags themselves stay visible.
 
             u = {
               scope_highlight = "MdHtmlUnderline",
@@ -331,9 +355,6 @@ return {
             code = {
               scope_highlight = "MdHtmlCode",
             },
-
-            -- <font color="#..."> is handled by a local autocmd below.
-            -- Keeping it out of html.tag avoids conceal shifting the text.
           },
         },
 
