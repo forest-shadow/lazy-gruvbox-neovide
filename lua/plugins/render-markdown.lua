@@ -61,13 +61,7 @@ return {
       if latex2text == "" then
         local appdata = vim.env.APPDATA
         if appdata then
-          local local_latex2text = vim.fs.joinpath(
-            appdata,
-            "Python",
-            "Python311",
-            "Scripts",
-            "latex2text.exe"
-          )
+          local local_latex2text = vim.fs.joinpath(appdata, "Python", "Python311", "Scripts", "latex2text.exe")
 
           if (vim.uv or vim.loop).fs_stat(local_latex2text) then
             latex2text = local_latex2text
@@ -82,6 +76,35 @@ return {
       end
 
       return {
+        anti_conceal = {
+          enabled = true,
+          ignore = {
+            bullet = true,
+            callout = true,
+            check_icon = true,
+            check_scope = true,
+            code_background = true,
+            code_border = true,
+            code_language = true,
+            dash = true,
+            head_background = true,
+            head_border = true,
+            indent = true,
+            latex = true,
+            link = true,
+            quote = true,
+            sign = true,
+            table_border = true,
+            virtual_lines = true,
+          },
+        },
+
+        win_options = {
+          concealcursor = {
+            rendered = "",
+          },
+        },
+
         latex = {
           enabled = true,
           converter = converters,
@@ -100,8 +123,7 @@ return {
             -- Теги будут скрываться, а содержимое будет стилизоваться.
             -- Я специально не добавляю icon, чтобы не появлялся лишний горизонтальный отступ.
 
-            -- <b>, <strong>, <i>, and <em> are handled by Tree-sitter.
-            -- Supported <font color="#..."> values are handled by lightweight window matches.
+            -- Some inline HTML tags are highlighted with buffer extmarks.
 
             u = {
               scope_highlight = "MdHtmlUnderline",
@@ -211,7 +233,7 @@ return {
           language_name = true,
           width = "full",
           border = "hide",
-          inline = true,
+          inline = false,
           highlight = "RenderMarkdownCode",
           highlight_border = "RenderMarkdownCodeBorder",
           highlight_inline = "RenderMarkdownCodeInline",

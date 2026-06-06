@@ -1,7 +1,6 @@
 local M = {}
 
 local namespace = vim.api.nvim_create_namespace("render_markdown_font_matches")
-local legacy_window_key = "render_markdown_font_matches"
 local priority = 20000
 
 local inline_tags = {
@@ -30,18 +29,6 @@ local function clear_buffer_highlights(buf)
   if vim.api.nvim_buf_is_valid(buf) then
     vim.api.nvim_buf_clear_namespace(buf, namespace, 0, -1)
   end
-end
-
-local function clear_legacy_window_matches()
-  local ids = vim.w[legacy_window_key]
-  if type(ids) ~= "table" then
-    return
-  end
-
-  for _, id in ipairs(ids) do
-    pcall(vim.fn.matchdelete, id)
-  end
-  vim.w[legacy_window_key] = nil
 end
 
 local function add_highlight(buf, group, lnum, start_col, end_col)
@@ -113,7 +100,6 @@ local function apply_buffer_highlights(buf)
     return
   end
 
-  clear_legacy_window_matches()
   clear_buffer_highlights(buf)
 
   if vim.bo[buf].filetype ~= "markdown" then
